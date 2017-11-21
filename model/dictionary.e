@@ -14,7 +14,7 @@ inherit
 create
 	make
 
-feature {NONE} -- Do not modify this export status!
+feature {NONE}
 	values: ARRAY[V]
 	keys: LINKED_LIST[K]
 
@@ -22,19 +22,30 @@ feature -- Abstraction function
 	model: FUN[K, V] -- Do not modify the type of this query.
 			-- Abstract the dictionary ADT as a mathematical function.
 		local
-			a:ARRAY[TUPLE[V,K]]
+			i:INTEGER
+			p:PAIR[K,V]
 		do
-			create a.make_empty
-			across current as c loop a.force (current.new_cursor.item, a.count + 1 ) end
+			create result.make_empty
 
-			create Result.make_empty
-			create Result.make_from_array(a)
-
+			from
+				i := 1
+			until
+				i = count + 1
+			loop
+				create p.make (keys[i], values[i])
+				result.extend(p) --(create {PAIR[K,V]}.make(keys[i],values[i]))
+				i := i + 1
+			end
 
 		ensure
-			consistent_model_imp_counts: model.count = count
-				-- Your Task: sizes of model and implementations the same
+			consistent_model_imp_counts:
+				model.count = count
 			consistent_model_imp_contents:
+			across
+			1 |..| result.count as j
+			all
+				result.has (create {PAIR[K, V]}.make (keys[j.item], values[j.item]))
+			end
 
 				-- Your Task: applying the model function on each key
 				-- gives back the corresponding value
@@ -67,9 +78,11 @@ feature -- Commands
 
 	add_entry (v: V; k: K)
 		require
-			non_existing_in_model: not model.has ([k,v])
+			non_existing_in_model: not model.domain.has (k)
 		do
-			model.extend ([k,v])
+			keys.force (k)
+			values.force (v, values.upper + 1)
+			--model.extend ([k,v])
 		ensure
 			entry_added_to_model:
 				model ~ old model.extended ([k, v])
@@ -77,17 +90,24 @@ feature -- Commands
 
 	remove_entry (k: K)
 		require
-			existing_in_model: true
-				-- Your Task
+			existing_in_model: model.domain.has(k)
 		local
-			v:V
+			n:INTEGER
 		do
-			v := current.get_value (k)
-		--	model.subtract ([k,v])
+			n := keys.index_of (k, 1)-- does this return an int?
+			keys.go_i_th (n)
+			keys.remove
+			from
+			until
+				n = values.upper
+			loop
+				values[n] := values[n + 1]
+				n := n + 1
+			end
+			values.remove_tail (1)
 		ensure
 			entry_removed_from_model:
-			--	model ~ old model.subtracted ([k])
-
+				model ~ (old model.deep_twin.domain_subtracted_by (k))
 		end
 
 feature -- Queries
@@ -103,28 +123,45 @@ feature -- Queries
 
 	get_keys (v: V): ITERABLE[K]
 			-- Keys that are associated with value 'v'.
-
-		local
-			ll:LINKED_LIST[K]--temporary local var
+	local
+			n:INTEGER
+			l:LINKED_LIST[K]
 		do
-			create ll.make
-			Result := ll
-			-- Your Task
+			create l.make
+			from
+				n := 1
+			until
+				n = keys.count + 1
+			loop
+				if values[n] ~ v then
+					l.extend(keys.at(n))
+				end
+				n := n + 1
+			end
+			Result := l
+
 		ensure
-			correct_model_result: True
-				-- Your Task: Every key in the result
-				--has the right corresponding value in model
+		correct_model_result:
+			across result as j all
+				model.range_restricted_by(v).domain.has(j.item)
+				end
 		end
+
 
 	get_value (k: K): detachable V
 			-- Assocated value of 'k' if it exists.
 			-- Void if 'k' does not exist.
+	local
+			n:INTEGER
 		do
-			-- Your Task
+			if (keys.has (k)) then
+				n := keys.index_of (k, 1)
+				Result := values.at (n)
+		end
 		ensure
-			case_of_void_result: True
+			case_of_void_result: not model.domain.has (k) implies (result = void)
 				-- Your Task: void result means the key does not exist in model
-			case_of_non_void_result: True
+			case_of_non_void_result: model.domain.has (k) implies (not(result = void))
 				-- Your Task: void result means the key exists in model
 		end
 invariant
